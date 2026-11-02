@@ -1,6 +1,20 @@
 # University NLP Project
 
-A command-line Natural Language Processing coursework project written in Python. It groups three practical exercises in one interactive program: text preprocessing, document classification with multinomial Naive Bayes, and information retrieval with TF-IDF and vector-space ranking.
+A Natural Language Processing coursework project written in Python, with a Persian right-to-left web interface and an interactive command-line program. It groups three practical exercises in one interactive program: text preprocessing, document classification with multinomial Naive Bayes, and information retrieval with TF-IDF and vector-space ranking.
+
+## UI preview
+
+![Vajeh NLP Studio demo: text processing, word frequency, classification, dark mode, and document search](docs/assets/ui-demo.gif)
+
+The demo uses the running local UI and real processing results. The interface is in Persian; the NLP algorithms process English text.
+
+Start the web interface after installing the Python requirements below:
+
+```bash
+python ui/server.py
+```
+
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765). See the [UI guide](ui/README.md) for limits and tests.
 
 ## What it includes
 
@@ -88,7 +102,7 @@ Enter queries in the terminal. Type `exit` when prompted for a query to return t
 
 - This is an educational implementation that favors readable, explicit algorithms over production-scale optimization.
 - The included datasets can be large. Initial indexing time depends on the number of documents selected by the program.
-- The code uses relative paths; run it from the repository root so the dataset paths resolve correctly.
+- Dataset paths resolve relative to the Python script. Generated command-line output files use the current working directory.
 
 ## License
 
