@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+ui/preview*.png
+ui/review-verified.png

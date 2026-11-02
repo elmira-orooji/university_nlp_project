@@ -10,9 +10,10 @@ import json
 from collections import defaultdict
 from datetime import datetime
 
-tp_path = '.\Dataset\TextProcessing\\61085-0.txt'
-tc_path = r".\Dataset\Classification-Train And Test"
-ir_path = r".\Dataset\IR\IR Documents to index"
+DATASET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Dataset')
+tp_path = os.path.join(DATASET_PATH, 'TextProcessing', '61085-0.txt')
+tc_path = os.path.join(DATASET_PATH, 'Classification-Train And Test')
+ir_path = os.path.join(DATASET_PATH, 'IR', 'IR Documents to Index')
 
 
 #-------------------------------------------------------Menues & get input----------------------------------------------------------------------
@@ -284,7 +285,7 @@ def tp_stop_word_removal(filename):
        content = file.read()
     
     content = re.sub(r'<[^>]+>',"",content)
-    content = re.sub('https?://\S+|wwww\.\S+',"",content)
+    content = re.sub(r'https?://\S+|wwww\.\S+',"",content)
     content = re.sub(pattern = r'['r'\U0001F600-\U0001F64F'r'\U0001F300-\U0001F5FF'r'\U0001F680-\U0001F6FF'r'\U0001F700-\U0001F77F'r']'
                       , repl = "",string = content, flags = re.UNICODE)
     
@@ -375,7 +376,7 @@ def train_naive_bayes(base_path, max_files_per_class=100):
     for cls in classes:
         class_path = os.path.join(base_path, cls)
         
-        train_files = [f for f in os.listdir(class_path) 
+        train_files = [f for f in sorted(os.listdir(class_path))
                       if os.path.isfile(os.path.join(class_path, f)) 
                       and f.lower().endswith('.txt')]
         
@@ -397,12 +398,13 @@ def train_naive_bayes(base_path, max_files_per_class=100):
                         vocab.add(word)
                     
                     files_processed += 1
-            except:
+            except OSError:
                 continue
         
         if files_processed > 0:
             class_info[cls] = {
                 'words': all_words,
+                'word_counts': Counter(all_words),
                 'file_count': files_processed,
                 'total_words': len(all_words),
                 'unique_words': len(set(all_words))
@@ -413,47 +415,40 @@ def train_naive_bayes(base_path, max_files_per_class=100):
     if not class_info:
         return None, None
     
-    return class_info, list(vocab)
+    return class_info, sorted(vocab)
 
 def classify_document(content, class_info, vocab):
-    test_words = extract_words(content)
-    if not test_words:
-        return None, None, None
-    
-    vocab_size = len(vocab)
+    """Score known vocabulary only; return four values on every path."""
+    if not class_info or not vocab:
+        return None, None, None, None
     vocab_set = set(vocab)
-    classes = list(class_info.keys())
-    
-    known_words = [w for w in test_words if w in vocab_set]
-    unknown_words = [w for w in test_words if w not in vocab_set]
-    
+    counts = Counter(word for word in extract_words(content) if word in vocab_set)
+    if not counts:
+        return None, None, None, None
+
     total_files = sum(info['file_count'] for info in class_info.values())
-    
+    if total_files <= 0:
+        return None, None, None, None
     scores = {}
-    
-    for cls in classes:
-        info = class_info[cls]
-        train_words = info['words']
-        total_words_in_class = info['total_words']
-        prior_prob = info['file_count'] / total_files
-        log_score = math.log(prior_prob) if prior_prob > 0 else -1e10
-        denominator = total_words_in_class + vocab_size
-        
-        for word in test_words:
-            count = train_words.count(word)
-            word_prob = (count + 1) / denominator
-            log_score += math.log(word_prob)
-        
-        scores[cls] = log_score
-    
+    for cls, info in class_info.items():
+        # Models trained before word_counts was added remain compatible.
+        training_counts = info.get('word_counts')
+        if training_counts is None:
+            training_counts = Counter(info['words'])
+        if info['file_count'] <= 0:
+            continue
+        score = math.log(info['file_count'] / total_files)
+        denominator = info['total_words'] + len(vocab_set)
+        for word, frequency in counts.items():
+            score += frequency * math.log((training_counts.get(word, 0) + 1) / denominator)
+        scores[cls] = score
+
+    if not scores:
+        return None, None, None, None
     probabilities = log_to_prob(scores)
-    
-    if scores:
-        predicted_class = max(scores, key=scores.get)
-        confidence = probabilities.get(predicted_class, 0)
-        return scores, probabilities, predicted_class, confidence
-    
-    return None, None, None, None
+    predicted_class = max(scores, key=scores.get)
+    return scores, probabilities, predicted_class, probabilities[predicted_class]
+
 
 def evaluate_with_correct_structure():
     print("----------------Training general info------------------\n")
@@ -588,7 +583,7 @@ def evaluate_with_correct_structure():
                     confusion_matrix[cls][pred_class] += 1
                     total_evaluated += 1
                     
-            except:
+            except OSError:
                 continue
     
     if not all_results:
@@ -644,11 +639,11 @@ def run_tfidf_ir_system_with_user_query(
 ):
    
     if documents_path is None:
-        ir_path
+        documents_path = ir_path
         
    
-    if not os.path.exists(ir_path):
-        print(f"\nERROR: Path '{ir_path}' not found!")
+    if not os.path.exists(documents_path):
+        print(f"\nERROR: Path '{documents_path}' not found!")
         return None
     
   
@@ -710,7 +705,9 @@ def build_tfidf_index(documents_path, output_dir, max_files=None):
     indexer = Indexer()
     
     text_files = []
-    for root, dirs, files in os.walk(ir_path):
+    for root, dirs, files in os.walk(documents_path):
+        dirs.sort()
+        files.sort()
         for file in files:
             if file.lower().endswith('.txt'):
                 text_files.append(os.path.join(root, file))
@@ -783,7 +780,7 @@ def build_tfidf_index(documents_path, output_dir, max_files=None):
             words = [w for w in words if w not in stopwords]
             
             filename = os.path.basename(filepath)
-            relative_path = os.path.relpath(filepath, ir_path)
+            relative_path = os.path.relpath(filepath, documents_path)
             
             doc_info = {
                 'id': i,
@@ -819,7 +816,7 @@ def build_tfidf_index(documents_path, output_dir, max_files=None):
         for word in unique_words:
             doc_frequencies[word] += 1
     
-    indexer.vocabulary = list(all_words_set)
+    indexer.vocabulary = sorted(all_words_set)
     indexer.term_index = {word: idx for idx, word in enumerate(indexer.vocabulary)}
     indexer.doc_frequencies = dict(doc_frequencies)
     indexer.stats['vocab_size'] = len(indexer.vocabulary)
@@ -1113,7 +1110,7 @@ def run_vsm_ir_system_with_user_query(
 ):
 
     if documents_path is None:
-        documents_path = r".\Dataset\IR\IR Documents to index"
+        documents_path = ir_path
 
     if not os.path.exists(documents_path):
         print(f"\nERROR: Path '{documents_path}' not found!")
@@ -1175,6 +1172,8 @@ def build_vector_space_model(documents_path, output_dir, max_files=None):
     vsm_model = VSMModel()
     text_files = []
     for root, dirs, files in os.walk(documents_path):
+        dirs.sort()
+        files.sort()
         for file in files:
             if file.lower().endswith('.txt'):
                 text_files.append(os.path.join(root, file))
@@ -1285,7 +1284,7 @@ def build_vector_space_model(documents_path, output_dir, max_files=None):
         for word in unique_words:
             doc_frequencies[word] += 1
     
-    vsm_model.vocabulary = list(all_words_set)
+    vsm_model.vocabulary = sorted(all_words_set)
     vsm_model.term_index = {word: idx for idx, word in enumerate(vsm_model.vocabulary)}
     vsm_model.doc_frequencies = dict(doc_frequencies)
     vsm_model.stats['vocab_size'] = len(vsm_model.vocabulary)
